@@ -19,3 +19,13 @@ app/src/main/assets/api_keys.properties
 # 系统文件
 .DS_Store
 Thumbs.db
+
+# 桌面端构建产物与运行时数据
+desktop/bin/
+desktop/obj/
+desktop/publish/
+desktop/config.json
+desktop/history.json
+desktop/selftest.log
+*.user
+*.suo

@@ -1,0 +1,254 @@
+<Window x:Class="DwDouyin.MainWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        Title="DwDouyin 抖音作品解析下载器 v1.0.1"
+        Width="1060" Height="720" MinWidth="880" MinHeight="600"
+        Background="{StaticResource BgBrush}"
+        FontFamily="Microsoft YaHei UI, Microsoft YaHei, Segoe UI"
+        TextOptions.TextFormattingMode="Ideal"
+        TextOptions.TextRenderingMode="ClearType"
+        UseLayoutRounding="True"
+        WindowStartupLocation="CenterScreen">
+
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="212"/>
+            <ColumnDefinition Width="*"/>
+        </Grid.ColumnDefinitions>
+
+        <!-- ================= 侧边导航 ================= -->
+        <Border Grid.Column="0" Background="{StaticResource SideBrush}">
+            <Grid Margin="0,26,0,18">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                </Grid.RowDefinitions>
+
+                <!-- 标识 -->
+                <StackPanel Grid.Row="0" Margin="22,0,18,30">
+                    <TextBlock Text="DwDouyin" FontSize="19" FontWeight="Bold"
+                               Foreground="{StaticResource InkBrush}"/>
+                    <TextBlock Text="抖音作品解析下载器" Style="{StaticResource SFaint}" Margin="0,5,0,0"/>
+                </StackPanel>
+
+                <!-- 导航项 -->
+                <StackPanel Grid.Row="1" Margin="10,0,10,0">
+                    <RadioButton x:Name="NavParse" Style="{StaticResource NavRadio}"
+                                 Content="解析下载" GroupName="Nav" IsChecked="True"
+                                 Checked="Nav_Checked"/>
+                    <RadioButton x:Name="NavHistory" Style="{StaticResource NavRadio}"
+                                 Content="历史记录" GroupName="Nav"
+                                 Checked="Nav_Checked"/>
+                    <RadioButton x:Name="NavSettings" Style="{StaticResource NavRadio}"
+                                 Content="解析接口" GroupName="Nav"
+                                 Checked="Nav_Checked"/>
+                </StackPanel>
+
+                <!-- 底部状态 -->
+                <StackPanel Grid.Row="2" Margin="22,0,18,0">
+                    <TextBlock x:Name="ServerStatusText" Style="{StaticResource SFaint}"
+                               Text="正在检测服务器…"/>
+                    <TextBlock x:Name="VersionText" Style="{StaticResource SFaint}"
+                               Text="v1.0.1 · C#/WPF" Margin="0,6,0,0"/>
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- ================= 内容区 ================= -->
+        <Grid Grid.Column="1">
+
+            <!-- 解析下载 -->
+            <ScrollViewer x:Name="PageParse" VerticalScrollBarVisibility="Auto" Padding="0">
+                <StackPanel Margin="34,30,34,40">
+
+                    <TextBlock Text="粘贴链接，一次解析多条" Style="{StaticResource SDisplay}"
+                               TextWrapping="Wrap"/>
+                    <TextBlock Style="{StaticResource SDim}" Margin="0,10,0,0"
+                               Text="每行一条。短链、网页链接、整段分享文案都可以直接丢进来。"/>
+
+                    <!-- 输入 -->
+                    <TextBox x:Name="InputBox" Style="{StaticResource FieldMulti}" Height="132"
+                             Margin="0,22,0,0"
+                             ToolTip="粘贴抖音分享文本或链接，每行一条支持批量"
+                             VerticalScrollBarVisibility="Auto"/>
+
+                    <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                        <Button x:Name="ParseBtn" Content="开始解析" Style="{StaticResource BtnPrimary}"
+                                Click="ParseBtn_Click"/>
+                        <Button x:Name="PasteBtn" Content="粘贴" Style="{StaticResource BtnGhost}"
+                                Margin="10,0,0,0" Click="PasteBtn_Click"/>
+                        <Button x:Name="ClearBtn" Content="清空" Style="{StaticResource BtnQuiet}"
+                                Margin="4,0,0,0" Click="ClearBtn_Click"/>
+                    </StackPanel>
+
+                    <TextBlock x:Name="ParseStatus" Style="{StaticResource SDim}" Margin="0,14,0,0"
+                               Text="等待输入链接"/>
+
+                    <!-- 下载进度 -->
+                    <Border x:Name="ProgressCard" Style="{StaticResource Panel}" Margin="0,18,0,0"
+                            Visibility="Collapsed">
+                        <StackPanel>
+                            <Grid>
+                                <TextBlock x:Name="ProgressTitle" Style="{StaticResource SBody}" Text="下载中"/>
+                                <TextBlock x:Name="ProgressSpeed" Style="{StaticResource SDim}"
+                                           HorizontalAlignment="Right"/>
+                            </Grid>
+                            <ProgressBar x:Name="ProgressBarCtl" Style="{StaticResource Bar}"
+                                         Margin="0,14,0,0" Maximum="100"/>
+                            <Grid Margin="0,10,0,0">
+                                <TextBlock x:Name="ProgressDetail" Style="{StaticResource SFaint}"
+                                           TextTrimming="CharacterEllipsis"/>
+                                <Button x:Name="CancelBtn" Content="取消" Style="{StaticResource BtnQuiet}"
+                                        HorizontalAlignment="Right" Visibility="Collapsed"
+                                        Click="CancelBtn_Click"/>
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 支持内容：两列定义列表 -->
+                    <Border Style="{StaticResource Panel}" Margin="0,30,0,0">
+                        <StackPanel>
+                            <TextBlock Text="能解析什么" Style="{StaticResource STitle}"/>
+                            <Grid Margin="0,16,0,0">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="*"/>
+                                </Grid.ColumnDefinitions>
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                    <RowDefinition Height="Auto"/>
+                                </Grid.RowDefinitions>
+
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="抖音视频" Style="{StaticResource SBody}"/>
+                                <TextBlock Grid.Row="0" Grid.Column="1" Text="原画无水印直链，附备用线路"
+                                           Style="{StaticResource SDim}"/>
+
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="图文与图集" Style="{StaticResource SBody}"
+                                           Margin="0,12,0,0"/>
+                                <TextBlock Grid.Row="1" Grid.Column="1" Text="逐张高清原图，可全部下载"
+                                           Style="{StaticResource SDim}" Margin="0,12,0,0"/>
+
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="实况照片" Style="{StaticResource SBody}"
+                                           Margin="0,12,0,0"/>
+                                <TextBlock Grid.Row="2" Grid.Column="1" Text="动态图与其静态封面"
+                                           Style="{StaticResource SDim}" Margin="0,12,0,0"/>
+
+                                <TextBlock Grid.Row="3" Grid.Column="0" Text="原声音频" Style="{StaticResource SBody}"
+                                           Margin="0,12,0,0"/>
+                                <TextBlock Grid.Row="3" Grid.Column="1" Text="作品背景音乐 MP3 直链"
+                                           Style="{StaticResource SDim}" Margin="0,12,0,0"/>
+                            </Grid>
+                            <TextBlock Style="{StaticResource SFaint}" Margin="0,18,0,0"
+                                       Text="批量解析时按行顺序处理，单条失败不影响其余条目。"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 结果列表 -->
+                    <TextBlock x:Name="ResultHeader" Style="{StaticResource STitle}" Margin="0,34,0,0"
+                               Text="解析结果" Visibility="Collapsed"/>
+                    <StackPanel x:Name="ResultList" Margin="0,14,0,0"/>
+
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- 历史记录 -->
+            <ScrollViewer x:Name="PageHistory" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+                <StackPanel Margin="34,30,34,40">
+
+                    <TextBlock Text="历史记录" Style="{StaticResource SDisplay}"/>
+                    <TextBlock Style="{StaticResource SDim}" Margin="0,10,0,0"
+                               Text="解析过的作品都会留在这里，随时可以重新挑一条下载，不必再贴链接。"/>
+
+                    <StackPanel Orientation="Horizontal" Margin="0,20,0,0">
+                        <Button x:Name="ClearHistoryBtn" Content="清空全部记录" Style="{StaticResource BtnQuiet}"
+                                Click="ClearHistoryBtn_Click"/>
+                        <Button x:Name="OpenDownloadDirBtn2" Content="打开下载目录" Style="{StaticResource BtnQuiet}"
+                                Click="OpenDir_Click"/>
+                    </StackPanel>
+
+                    <TextBlock x:Name="HistoryEmpty" Style="{StaticResource SDim}" Margin="0,40,0,0"
+                               Text="还没有记录。解析一个作品后，它会出现在这里。"
+                               TextWrapping="Wrap" MaxWidth="460" HorizontalAlignment="Left"/>
+
+                    <StackPanel x:Name="HistoryList" Margin="0,20,0,0"/>
+
+                </StackPanel>
+            </ScrollViewer>
+
+            <!-- 解析接口 -->
+            <ScrollViewer x:Name="PageSettings" VerticalScrollBarVisibility="Auto" Visibility="Collapsed">
+                <StackPanel Margin="34,30,34,40">
+
+                    <TextBlock Text="解析接口" Style="{StaticResource SDisplay}"/>
+                    <TextBlock Style="{StaticResource SDim}" Margin="0,10,0,0"
+                               Text="默认指向自建服务器。地址、路径和完整请求都可以直接改，改完点保存立即生效。"/>
+
+                    <!-- 接口地址 -->
+                    <Border Style="{StaticResource Panel}" Margin="0,26,0,0">
+                        <StackPanel>
+                            <TextBlock Text="自建解析服务器" Style="{StaticResource STitle}"/>
+
+                            <TextBlock Text="服务器地址" Style="{StaticResource SFaint}" Margin="0,18,0,8"/>
+                            <TextBox x:Name="ApiBaseBox" Style="{StaticResource Field}"
+                                     TextChanged="ApiField_Changed"/>
+
+                            <TextBlock Text="接口路径" Style="{StaticResource SFaint}" Margin="0,16,0,8"/>
+                            <TextBox x:Name="ApiPathBox" Style="{StaticResource Field}"
+                                     TextChanged="ApiField_Changed"/>
+
+                            <TextBlock Text="实际请求" Style="{StaticResource SFaint}" Margin="0,16,0,8"/>
+                            <Border Background="{StaticResource FieldBrush}" CornerRadius="8" Padding="12,10">
+                                <TextBlock x:Name="ApiPreviewText" FontSize="12.5"
+                                           Foreground="{StaticResource DimBrush}"
+                                           TextWrapping="Wrap" LineHeight="19"/>
+                            </Border>
+
+                            <StackPanel Orientation="Horizontal" Margin="0,18,0,0">
+                                <Button x:Name="TestApiBtn" Content="测试连接" Style="{StaticResource BtnPrimary}"
+                                        Click="TestApiBtn_Click"/>
+                                <Button x:Name="SaveApiBtn" Content="保存" Style="{StaticResource BtnGhost}"
+                                        Margin="10,0,0,0" Click="SaveApiBtn_Click"/>
+                            </StackPanel>
+
+                            <TextBlock x:Name="ApiTestResult" Style="{StaticResource SDim}" Margin="0,14,0,0"
+                                       TextWrapping="Wrap"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 接口说明 -->
+                    <Border Style="{StaticResource Panel}" Margin="0,16,0,0">
+                        <StackPanel>
+                            <TextBlock Text="接口约定" Style="{StaticResource STitle}"/>
+                            <TextBlock Style="{StaticResource SDim}" Margin="0,14,0,0" LineHeight="22"
+                                       TextWrapping="Wrap"
+                                       Text="GET 请求，参数 url 传作品链接。返回 JSON：code 为 200 表示成功，data 里取 title、author.name、cover、url、size、size_label、quality、video_backup 与 images。换成自己的服务时照着这个结构返回即可。"/>
+                            <TextBlock Style="{StaticResource SFaint}" Margin="0,14,0,0" LineHeight="20"
+                                       TextWrapping="Wrap"
+                                       Text="如果把路径留空，会按「服务器地址 + /api/douyin/douyin.php」补全。"/>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- 下载目录 -->
+                    <Border Style="{StaticResource Panel}" Margin="0,16,0,0">
+                        <StackPanel>
+                            <TextBlock Text="下载目录" Style="{StaticResource STitle}"/>
+                            <TextBox x:Name="DownloadDirBox" Style="{StaticResource Field}" Margin="0,16,0,0"/>
+                            <StackPanel Orientation="Horizontal" Margin="0,14,0,0">
+                                <Button x:Name="BrowseDirBtn" Content="选择文件夹" Style="{StaticResource BtnGhost}"
+                                        Click="BrowseDir_Click"/>
+                                <Button x:Name="OpenDirBtn" Content="打开目录" Style="{StaticResource BtnQuiet}"
+                                        Margin="6,0,0,0" Click="OpenDir_Click"/>
+                                <Button x:Name="SaveDirBtn" Content="保存" Style="{StaticResource BtnQuiet}"
+                                        Margin="4,0,0,0" Click="SaveDirBtn_Click"/>
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                </StackPanel>
+            </ScrollViewer>
+        </Grid>
+    </Grid>
+</Window>
