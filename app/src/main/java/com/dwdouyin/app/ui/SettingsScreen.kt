@@ -44,9 +44,13 @@ import com.dwdouyin.app.data.Prefs
 import com.dwdouyin.app.data.QualityPrefs
 import kotlinx.coroutines.launch
 
-/** 设置：玻璃分组卡片 · 保存路径 / 画质偏好 / 引擎状态。 */
+/** 设置：分组卡片 · 配色 / 保存路径 / 画质偏好 / 引擎状态。 */
 @Composable
-fun SettingsScreen(parser: DouyinParser) {
+fun SettingsScreen(
+    parser: DouyinParser,
+    paletteKey: String = "mono",
+    onPaletteChange: (String) -> Unit = {},
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var treeUri by remember { mutableStateOf(Prefs.getTreeUri(context)?.toString()) }
@@ -100,6 +104,69 @@ fun SettingsScreen(parser: DouyinParser) {
                 .padding(18.dp),
             verticalArrangement = Arrangement.spacedBy(14.dp),
         ) {
+            // ---- 配色 ----
+            GlassCard(cornerRadius = 18) {
+                Column(
+                    Modifier.padding(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text("配色", fontWeight = FontWeight.Bold, color = TextPrimary, fontSize = 15.sp)
+                    Spacer(Modifier.padding(top = 6.dp))
+                    AllPalettes.forEach { item ->
+                        val isSelected = paletteKey == item.key
+                        Row(
+                            Modifier
+                                .fillMaxWidth()
+                                .clip(RoundedCornerShape(10.dp))
+                                .background(if (isSelected) Surface2 else Color.Transparent)
+                                .clickable { onPaletteChange(item.key) }
+                                .padding(horizontal = 8.dp, vertical = 9.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            // 三色渐变样张：堆叠小圆
+                            Box(Modifier.size(34.dp)) {
+                                item.swatch.forEachIndexed { i, c ->
+                                    Box(
+                                        Modifier
+                                            .align(
+                                                when (i) {
+                                                    0 -> Alignment.TopEnd
+                                                    1 -> Alignment.Center
+                                                    else -> Alignment.BottomStart
+                                                },
+                                            )
+                                            .size(20.dp)
+                                            .background(c, androidx.compose.foundation.shape.CircleShape),
+                                    )
+                                }
+                            }
+                            Spacer(Modifier.padding(start = 12.dp))
+                            Text(
+                                item.name,
+                                fontSize = 13.sp,
+                                color = if (isSelected) BluePrimary else TextSecondary,
+                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                            )
+                            Spacer(Modifier.weight(1f))
+                            if (isSelected) {
+                                Text(
+                                    "当前",
+                                    fontSize = 11.sp,
+                                    color = BluePrimary,
+                                    fontWeight = FontWeight.Medium,
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.padding(top = 4.dp))
+                    Text(
+                        "切换后立即生效，重启应用后保留。默认墨白。",
+                        fontSize = 11.sp,
+                        color = TextDim,
+                    )
+                }
+            }
+
             // ---- 保存路径 ----
             GlassCard(cornerRadius = 18) {
                 Column(
@@ -156,7 +223,7 @@ fun SettingsScreen(parser: DouyinParser) {
                                             primaryGradient
                                         } else {
                                             androidx.compose.ui.graphics.Brush.linearGradient(
-                                                listOf(Color(0xFFD9DEE6), Color(0xFFD9DEE6)),
+                                                listOf(Surface3, Surface3),
                                             )
                                         },
                                         shape = androidx.compose.foundation.shape.RoundedCornerShape(9.dp),
@@ -172,7 +239,7 @@ fun SettingsScreen(parser: DouyinParser) {
                         }
                     }
                     Text(
-                        "解析完成后自动预选对应清晰度；胶囊仍可手动多选。",
+                        "解析完成后按这里自动挑默认档位；结果页点哪档就下哪档。",
                         fontSize = 11.sp,
                         color = TextDim,
                     )
@@ -291,6 +358,11 @@ fun SettingsScreen(parser: DouyinParser) {
                                         parser.setApiChannelEnabled(ch.id, checked)
                                         channels = parser.listApiChannels()
                                     },
+                                    colors = androidx.compose.material3.CheckboxDefaults.colors(
+                                        checkedColor = BluePrimary,
+                                        uncheckedColor = TextLightGray,
+                                        checkmarkColor = Color.White,
+                                    ),
                                 )
                                 Column {
                                     Text(ch.name, fontSize = 13.sp, color = TextDark)
@@ -308,7 +380,7 @@ fun SettingsScreen(parser: DouyinParser) {
                                 Text(
                                     "删除",
                                     fontSize = 12.sp,
-                                    color = Color(0xFFC66199),
+                                    color = Danger,
                                     modifier = Modifier
                                         .clickable {
                                             parser.removeApiChannel(ch.id)
@@ -359,11 +431,23 @@ fun SettingsScreen(parser: DouyinParser) {
                             selected = newType == "suxun",
                             onClick = { newType = "suxun" },
                             label = { Text("标准格式") },
+                            colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = BluePrimary,
+                                selectedLabelColor = Color.White,
+                                containerColor = Surface2,
+                                labelColor = TextGray,
+                            ),
                         )
                         androidx.compose.material3.FilterChip(
                             selected = newType == "bugpk",
                             onClick = { newType = "bugpk" },
                             label = { Text("完整画质格式") },
+                            colors = androidx.compose.material3.FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = BluePrimary,
+                                selectedLabelColor = Color.White,
+                                containerColor = Surface2,
+                                labelColor = TextGray,
+                            ),
                         )
                         Spacer(Modifier.weight(1f))
                         GradientButton(
@@ -392,7 +476,7 @@ fun SettingsScreen(parser: DouyinParser) {
             GlassCard(cornerRadius = 18) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("关于", fontWeight = FontWeight.Bold, color = TextPrimary, fontSize = 15.sp)
-                    Text("dwdouyin 抖音作品解析下载工具 v3.3.0", fontSize = 12.sp, color = TextSecondary)
+                    Text("dwdouyin 抖音作品解析下载工具 v3.3.1", fontSize = 12.sp, color = TextSecondary)
                     Text(
                         "仅用于个人技术学习，禁止商用、批量爬取，遵守版权法规。",
                         fontSize = 11.sp,

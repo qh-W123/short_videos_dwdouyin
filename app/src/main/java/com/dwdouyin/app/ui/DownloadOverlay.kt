@@ -6,113 +6,166 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.dwdouyin.app.data.DownloadManager
 import com.dwdouyin.app.data.DownloadState
+import kotlinx.coroutines.delay
 
-/** 玻璃质感下载进度浮窗：底部悬浮，动画入场。 */
+/**
+ * 底部下载浮窗 v3。
+ * 关键修复：完成 / 失败提示会自己消失（不再需要点「知道了」），
+ * 计时器挂在组合树外层，浮窗淡出后也照样把它收掉。
+ */
 @Composable
 fun BoxScope.DownloadOverlay(state: DownloadState) {
-    val visible = state !is DownloadState.Idle
+    // 完成 3.2 秒、失败 4 秒后自动收起
+    LaunchedEffect(state) {
+        when (state) {
+            is DownloadState.Done -> {
+                delay(3200)
+                DownloadManager.dismiss()
+            }
+            is DownloadState.Failed -> {
+                delay(4000)
+                DownloadManager.dismiss()
+            }
+            else -> Unit
+        }
+    }
+
     AnimatedVisibility(
-        visible = visible,
+        visible = state !is DownloadState.Idle,
         enter = fadeIn() + slideInVertically { it },
         exit = fadeOut() + slideOutVertically { it },
         modifier = Modifier
             .align(Alignment.BottomCenter)
-            .padding(16.dp),
+            .padding(horizontal = 16.dp)
+            .padding(bottom = 20.dp),
     ) {
-        GlassCard(cornerRadius = 18) {
-            Column(Modifier.padding(14.dp)) {
-                when (state) {
-                    is DownloadState.Running -> {
-                        val progress = if (state.total > 0) {
-                            (state.received.toFloat() / state.total).coerceIn(0f, 1f)
-                        } else 0f
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                state.filename,
-                                Modifier.weight(1f),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                fontSize = 13.sp,
-                                color = TextPrimary,
-                            )
-                            TextButton(onClick = { DownloadManager.cancel() }) {
-                                Text("取消", color = Danger, fontSize = 13.sp)
-                            }
-                        }
-                        Spacer(Modifier.padding(top = 8.dp))
-                        LinearProgressIndicator(
-                            progress = { progress },
-                            modifier = Modifier.fillMaxWidth(),
-                            color = BluePrimary,
-                            trackColor = Color(0xFFE6EAF0),
-                            strokeCap = StrokeCap.Round,
-                        )
-                        Spacer(Modifier.padding(top = 6.dp))
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .clip(RoundedCornerShape(18.dp))
+                .background(Surface1)
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+        ) {
+            when (state) {
+                is DownloadState.Running -> {
+                    val progress = if (state.total > 0) {
+                        (state.received.toFloat() / state.total).coerceIn(0f, 1f)
+                    } else 0f
+                    Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
-                            "${state.status} · ${formatPercent(state.received, state.total)} · ${formatSpeed(state.speedBps)}",
-                            fontSize = 12.sp,
-                            color = TextSecondary,
+                            state.filename,
+                            Modifier.weight(1f),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            style = TypeBody,
+                            fontWeight = FontWeight.SemiBold,
+                            color = TextDark,
                         )
+                        Spacer(Modifier.width(10.dp))
+                        Box(
+                            Modifier
+                                .clip(RoundedCornerShape(20.dp))
+                                .background(Surface2)
+                                .clickable { DownloadManager.cancel() }
+                                .padding(horizontal = 16.dp, vertical = 8.dp),
+                        ) {
+                            Text("取消", color = Danger, style = TypeLabel)
+                        }
                     }
+                    Spacer(Modifier.height(12.dp))
+                    LinearProgressIndicator(
+                        progress = { progress },
+                        modifier = Modifier.fillMaxWidth().height(5.dp).clip(RoundedCornerShape(3.dp)),
+                        color = BluePrimary,
+                        trackColor = Surface3,
+                        strokeCap = StrokeCap.Round,
+                    )
+                    Spacer(Modifier.height(9.dp))
+                    Text(
+                        "${state.status} · ${formatPercent(state.received, state.total)} · ${formatSpeed(state.speedBps)}",
+                        style = TypeCaption,
+                        color = TextGray,
+                    )
+                }
 
-                    is DownloadState.Done -> {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text("✓", color = Success, fontSize = 16.sp)
-                            Spacer(Modifier.width(8.dp))
+                is DownloadState.Done -> {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("✓", color = Success, fontSize = 16.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.width(9.dp))
+                        Column(Modifier.weight(1f)) {
                             Text(
-                                "下载完成：${state.filename}",
-                                Modifier.weight(1f),
+                                "已保存 ${state.filename}",
                                 maxLines = 1,
                                 overflow = TextOverflow.Ellipsis,
-                                fontSize = 13.sp,
-                                color = TextPrimary,
+                                style = TypeBody,
+                                fontWeight = FontWeight.SemiBold,
+                                color = TextDark,
                             )
-                            TextButton(onClick = { DownloadManager.dismiss() }) {
-                                Text("知道了", color = Teal, fontSize = 13.sp)
-                            }
-                        }
-                        Text(state.path, fontSize = 11.sp, color = TextDim, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                    }
-
-                    is DownloadState.Failed -> {
-                        Row(Modifier.padding(vertical = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Text("⚠", color = Danger, fontSize = 15.sp)
-                            Spacer(Modifier.width(8.dp))
+                            Spacer(Modifier.height(3.dp))
                             Text(
-                                "下载失败：${state.message}",
-                                Modifier.weight(1f),
-                                fontSize = 13.sp,
-                                color = Color(0xFFC62828),
+                                "这条提示会自己消失",
+                                style = TypeCaption,
+                                color = TextLightGray,
                             )
-                            TextButton(onClick = { DownloadManager.dismiss() }) {
-                                Text("知道了", color = TextSecondary, fontSize = 13.sp)
-                            }
                         }
                     }
-
-                    is DownloadState.Idle -> Unit
+                    Spacer(Modifier.height(10.dp))
+                    Text(
+                        state.path,
+                        style = TypeCaption,
+                        color = TextGray,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis,
+                    )
                 }
+
+                is DownloadState.Failed -> {
+                    Row(verticalAlignment = Alignment.Top) {
+                        Text("!", color = Danger, fontSize = 15.sp, fontWeight = FontWeight.Bold)
+                        Spacer(Modifier.width(9.dp))
+                        Column(Modifier.weight(1f)) {
+                            Text(
+                                "下载失败",
+                                style = TypeBody,
+                                fontWeight = FontWeight.SemiBold,
+                                color = TextDark,
+                            )
+                            Spacer(Modifier.height(4.dp))
+                            Text(state.message, style = TypeCaption, color = Danger)
+                            Spacer(Modifier.height(4.dp))
+                            Text("稍后会自动收起", style = TypeCaption, color = TextLightGray)
+                        }
+                    }
+                }
+
+                is DownloadState.Idle -> Unit
             }
         }
     }

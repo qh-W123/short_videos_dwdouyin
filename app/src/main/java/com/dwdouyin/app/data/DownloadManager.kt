@@ -7,6 +7,7 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import androidx.documentfile.provider.DocumentFile
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -45,6 +46,14 @@ object DownloadManager {
     val state: StateFlow<DownloadState> = _state
     private var job: Job? = null
 
+    /**
+     * 执行代号：每次 start 自增，取消时也自增。
+     * 下载协程持有自己的代号，只有代号仍是最新时才允许写状态——
+     * 否则取消后残留的进度回调会把浮层重新"复活"成下载中。
+     */
+    @Volatile
+    private var runToken: Long = 0L
+
     val isRunning: Boolean
         get() = job?.isActive == true
 
@@ -74,8 +83,12 @@ object DownloadManager {
         if (tasks.isNotEmpty()) start(context, tasks)
     }
 
+    /** 取消：作废代号 + 断开在途连接 + 取消协程 + 立即回到 Idle。 */
     fun cancel() {
+        runToken++
+        DownloadEngine.abort()
         job?.cancel()
+        job = null
         _state.value = DownloadState.Idle
     }
 
@@ -91,27 +104,40 @@ object DownloadManager {
     private fun start(context: Context, tasks: List<Triple<WorkInfo, MediaEntry, String>>) {
         if (isRunning) return
         val appContext = context.applicationContext
+        val token = ++runToken
         job = scope.launch {
             val total = tasks.size
             for ((offset, task) in tasks.withIndex()) {
                 val (taskWork, entry, note) = task
+                if (token != runToken) return@launch
                 val status = when {
                     total > 1 && note.startsWith("批量") -> "批量下载中 (${offset + 1}/$total)"
                     total > 1 -> "下载中 (${offset + 1}/$total)"
                     else -> "下载中"
                 }
                 try {
-                    val saved = saveEntry(appContext, taskWork, entry, status)
+                    val saved = saveEntry(appContext, taskWork, entry, status, token)
+                    if (token != runToken) return@launch
                     _state.value = DownloadState.Done(saved.first, saved.second)
+                } catch (e: CancellationException) {
+                    return@launch
                 } catch (e: DownloadException.Cancelled) {
-                    _state.value = DownloadState.Idle
+                    if (token == runToken) _state.value = DownloadState.Idle
                     return@launch
                 } catch (e: Exception) {
-                    _state.value = DownloadState.Failed(e.message ?: "下载失败")
+                    if (token == runToken) {
+                        _state.value = DownloadState.Failed(e.message ?: "下载失败")
+                    }
                     return@launch
                 }
             }
+            if (token == runToken) job = null
         }
+    }
+
+    /** 只有代号仍有效时才写进度，避免取消后被残留回调覆盖。 */
+    private fun report(token: Long, state: DownloadState.Running) {
+        if (token == runToken) _state.value = state
     }
 
     /**
@@ -127,6 +153,7 @@ object DownloadManager {
         work: WorkInfo,
         entry: MediaEntry,
         status: String,
+        token: Long,
     ): Pair<String, String> {
         val displayName = buildDisplayName(work, entry)
         val mime = guessMime(work.workType, entry.url)
@@ -139,13 +166,13 @@ object DownloadManager {
                 ?: tree.createFile(mime, displayName)
                 ?: throw IOException("无法在所选目录创建文件")
             val savedPath = doc.uri.toString()
-            val received = downloadTo(context, work, entry, doc.uri, displayName, status)
+            val received = downloadTo(context, work, entry, doc.uri, displayName, status, token)
             return displayName to savedPath
         }
 
         // 2) 系统相册（默认）：DCIM/dwdouyin —— 相册 App 直接可见
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
-            val savedPath = saveToMediaStore(context, work, entry, displayName, mime, status)
+            val savedPath = saveToMediaStore(context, work, entry, displayName, mime, status, token)
             return displayName to savedPath
         }
 
@@ -160,7 +187,7 @@ object DownloadManager {
             if (publicDcim.canWrite()) {
                 val file = uniqueFile(File(publicDcim, displayName))
                 DownloadEngine.download(entry.url, { FileOutputStream(file) }) { recv, totalBytes, speed ->
-                    _state.value = DownloadState.Running(displayName, recv, totalBytes, speed, status)
+                    report(token, DownloadState.Running(displayName, recv, totalBytes, speed, status))
                 }
                 recordHistory(context, work)
                 // 扫描进相册索引
@@ -180,7 +207,7 @@ object DownloadManager {
             ?: context.filesDir
         val file = uniqueFile(File(dir, displayName))
         DownloadEngine.download(entry.url, { FileOutputStream(file) }) { recv, totalBytes, speed ->
-            _state.value = DownloadState.Running(displayName, recv, totalBytes, speed, status)
+            report(token, DownloadState.Running(displayName, recv, totalBytes, speed, status))
         }
         recordHistory(context, work)
         return displayName to file.absolutePath
@@ -194,6 +221,7 @@ object DownloadManager {
         displayName: String,
         mime: String,
         status: String,
+        token: Long,
     ): String {
         val isVideo = work.workType == "video"
         val collection = if (isVideo) {
@@ -216,7 +244,7 @@ object DownloadManager {
                 context.contentResolver.openOutputStream(uri, "wt")
                     ?: throw IOException("无法打开相册输出流")
             }) { recv, totalBytes, speed ->
-                _state.value = DownloadState.Running(displayName, recv, totalBytes, speed, status)
+                report(token, DownloadState.Running(displayName, recv, totalBytes, speed, status))
             }
             // 写入完成，解除 pending → 相册立即可见
             val done = ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING, 0) }
@@ -238,12 +266,13 @@ object DownloadManager {
         uri: android.net.Uri,
         displayName: String,
         status: String,
+        token: Long,
     ): Long {
         val received = DownloadEngine.download(entry.url, {
             context.contentResolver.openOutputStream(uri, "wt")
                 ?: throw IOException("无法打开输出流")
         }) { recv, totalBytes, speed ->
-            _state.value = DownloadState.Running(displayName, recv, totalBytes, speed, status)
+            report(token, DownloadState.Running(displayName, recv, totalBytes, speed, status))
         }
         recordHistory(context, work)
         return received

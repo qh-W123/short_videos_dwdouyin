@@ -52,6 +52,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -155,150 +156,103 @@ fun HomeScreen(
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState()),
         ) {
-            // ---- 顶部标题栏 ----
-            Row(
+            // ---- 顶部：软件名 + 功能介绍（居中） ----
+            Column(
                 Modifier
                     .fillMaxWidth()
                     .background(PageBg)
-                    .padding(horizontal = 18.dp, vertical = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                    .padding(start = 20.dp, end = 20.dp, top = 26.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
-                    "抖音解析下载",
-                    fontSize = 22.sp,
+                    "dwdouyin",
+                    fontSize = 28.sp,
+                    lineHeight = 36.sp,
                     fontWeight = FontWeight.Bold,
                     color = TextDark,
+                    letterSpacing = (-0.6).sp,
+                    textAlign = TextAlign.Center,
                 )
-                Spacer(Modifier.weight(1f))
-                Icon(
-                    Icons.Filled.Info,
-                    contentDescription = "关于",
-                    tint = TextGray,
-                    modifier = Modifier
-                        .size(22.dp)
-                        .clickable { onOpenSettings?.invoke() },
+                Spacer(Modifier.height(6.dp))
+                Text(
+                    "抖音作品解析下载工具",
+                    style = TypeSection,
+                    color = TextDark,
+                    textAlign = TextAlign.Center,
+                )
+                Spacer(Modifier.height(10.dp))
+                Text(
+                    "把作品链接贴进来，解析后点哪档就下哪档，文件直接存进系统相册。" +
+                        "视频、图文、实况照片、原声都能拿，抖音、B站、快手、小红书等 33+ 平台的链接都认。",
+                    style = TypeBody,
+                    color = TextGray,
+                    textAlign = TextAlign.Center,
                 )
             }
 
-            Spacer(Modifier.height(4.dp))
-
-            // ---- Hero 卡片（浅蓝渐变 + 标题） ----
-            Box(
-                Modifier
-                    .padding(horizontal = 16.dp)
-                    .fillMaxWidth()
-                    .clip(RoundedCornerShape(20.dp))
-                    .background(heroGradient)
-                    .padding(vertical = 30.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Box(
-                        Modifier
-                            .size(56.dp)
-                            .clip(RoundedCornerShape(18.dp))
-                            .background(Color.White.copy(alpha = 0.7f)),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(
-                            Icons.Filled.Link,
-                            contentDescription = null,
-                            tint = BluePrimary,
-                            modifier = Modifier.size(28.dp),
+            Spacer(Modifier.height(24.dp))
+            // ---- 输入块（整宽，直接铺在页面上，不套卡片） ----
+            Column(Modifier.padding(horizontal = 16.dp)) {
+                Row(
+                    Modifier
+                        .fillMaxWidth()
+                        .heightIn(min = 132.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(Surface2)
+                        .padding(horizontal = 16.dp, vertical = 14.dp),
+                ) {
+                    Box(Modifier.weight(1f)) {
+                        if (input.isBlank()) {
+                            Text(
+                                if (batchMode) "粘贴主页链接或任一作品分享文本…"
+                                else "粘贴分享链接，支持抖音/B站/快手/小红书等 33+ 平台",
+                                fontSize = 14.sp,
+                                lineHeight = 21.sp,
+                                color = TextLightGray,
+                                maxLines = 3,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                        androidx.compose.foundation.text.BasicTextField(
+                            value = input,
+                            onValueChange = { input = it },
+                            textStyle = androidx.compose.ui.text.TextStyle(
+                                fontSize = 14.sp,
+                                lineHeight = 21.sp,
+                                color = TextDark,
+                            ),
+                            modifier = Modifier.fillMaxWidth(),
                         )
                     }
-                    Spacer(Modifier.height(16.dp))
-                    Text(
-                        "作品链接工具",
-                        fontSize = 24.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = TextDark,
-                    )
-                    Spacer(Modifier.height(8.dp))
-                    Text(
-                        "粘贴链接，智能预览作品详情",
-                        fontSize = 14.sp,
-                        color = TextGray,
-                    )
-                }
-            }
-
-            Spacer(Modifier.height(16.dp))
-
-            // ---- 输入卡片 ----
-            GlassCard(
-                Modifier
-                    .padding(horizontal = 16.dp)
-                    .fillMaxWidth(),
-                cornerRadius = 18,
-            ) {
-                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    // 输入框（带链接图标 + 清除按钮）
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 96.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(BlueSoftBg)
-                            .border(1.dp, CardBorder, RoundedCornerShape(12.dp))
-                            .padding(horizontal = 12.dp, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        Icon(
-                            Icons.Filled.Link,
-                            contentDescription = null,
-                            tint = if (input.isNotBlank()) BluePrimary else TextLightGray,
-                            modifier = Modifier.size(20.dp),
-                        )
+                    if (input.isNotBlank()) {
                         Spacer(Modifier.width(10.dp))
-                        Box(Modifier.weight(1f)) {
-                            if (input.isBlank()) {
-                                Text(
-                                    if (batchMode) "粘贴主页链接或任一作品分享文本…"
-                                    else "粘贴分享链接，支持抖音/B站/快手/小红书等 33+ 平台",
-                                    fontSize = 14.sp,
-                                    color = TextLightGray,
-                                    maxLines = 3,
-                                    overflow = TextOverflow.Ellipsis,
-                                )
-                            }
-                            androidx.compose.foundation.text.BasicTextField(
-                                value = input,
-                                onValueChange = { input = it },
-                                textStyle = androidx.compose.ui.text.TextStyle(
-                                    fontSize = 14.sp,
-                                    color = TextDark,
-                                ),
-                                modifier = Modifier.fillMaxWidth(),
-                            )
-                        }
-                        if (input.isNotBlank()) {
-                            Spacer(Modifier.width(8.dp))
-                            Icon(
-                                Icons.Filled.Clear,
-                                contentDescription = "清除",
-                                tint = TextLightGray,
-                                modifier = Modifier
-                                    .size(20.dp)
-                                    .clickable { input = "" },
-                            )
-                        }
-                    }
-
-                    // 按钮行：粘贴（描边） + 解析（蓝色实心）
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    ) {
-                        GlassOutlineButton(
-                            text = "粘贴",
-                            onClick = {
-                                val clip = readClipboard(context)
-                                if (clip.isNullOrBlank()) error = "剪贴板为空"
-                                else { input = clip; error = null }
-                            },
-                            modifier = Modifier.width(110.dp),
+                        Icon(
+                            Icons.Filled.Clear,
+                            contentDescription = "清除",
+                            tint = TextLightGray,
+                            modifier = Modifier
+                                .size(20.dp)
+                                .clickable { input = "" },
                         )
+                    }
+                }
+
+                Spacer(Modifier.height(12.dp))
+
+                // 按钮行：粘贴（第二档表面） + 解析（墨黑实心）
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    GlassOutlineButton(
+                        text = "粘贴",
+                        onClick = {
+                            val clip = readClipboard(context)
+                            if (clip.isNullOrBlank()) error = "剪贴板为空"
+                            else { input = clip; error = null }
+                        },
+                        modifier = Modifier.width(104.dp),
+                    )
                         GradientButton(
                             text = if (parsing) "解析中…" else "解析",
                             onClick = {
@@ -349,8 +303,8 @@ fun HomeScreen(
                         )
                     }
 
-                    // 批量开关（3.3.0：抖音风控收紧，主页批量暂不可用——入口隐藏，功能代码保留待恢复）
-                    if (false) {
+                // 批量开关（3.3.0：抖音风控收紧，主页批量暂不可用——入口隐藏，功能代码保留待恢复）
+                if (false) {
                     Row(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier
@@ -364,7 +318,7 @@ fun HomeScreen(
                             colors = SwitchDefaults.colors(
                                 checkedTrackColor = BluePrimary,
                                 checkedThumbColor = Color.White,
-                                uncheckedTrackColor = Color(0xFFD9DEE6),
+                                uncheckedTrackColor = Surface3,
                                 uncheckedThumbColor = Color.White,
                             ),
                         )
@@ -373,60 +327,42 @@ fun HomeScreen(
                         Spacer(Modifier.width(8.dp))
                         Text("仅限学习·≤20条", fontSize = 11.sp, color = WarnAmber)
                     }
-                    }
                 }
             }
 
-            // ---- 解析中 ----
+            // ---- 解析中（内联状态行，不用卡片） ----
             AnimatedVisibility(visible = parsing, enter = fadeIn() + slideInVertically { it / 2 }, exit = fadeOut()) {
-                GlassCard(
+                Row(
                     Modifier
-                        .padding(horizontal = 16.dp)
-                        .padding(top = 12.dp),
-                    cornerRadius = 14,
+                        .padding(horizontal = 20.dp)
+                        .padding(top = 14.dp),
+                    verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        CircularProgressIndicator(Modifier.size(18.dp), color = BluePrimary, strokeWidth = 2.dp)
-                        Spacer(Modifier.width(12.dp))
-                        Text(
-                            stageText.ifBlank { "解析中…" },
-                            fontSize = 13.sp,
-                            color = TextGray,
-                        )
-                    }
+                    CircularProgressIndicator(Modifier.size(16.dp), color = BluePrimary, strokeWidth = 2.dp)
+                    Spacer(Modifier.width(12.dp))
+                    Text(
+                        stageText.ifBlank { "解析中…" },
+                        fontSize = 13.sp,
+                        color = TextGray,
+                    )
                 }
             }
 
-            // ---- 错误 ----
+            // ---- 错误（整宽色块，无描边） ----
             AnimatedVisibility(visible = error != null, enter = fadeIn(), exit = fadeOut()) {
-                GlassCard(
+                Row(
                     Modifier
                         .padding(horizontal = 16.dp)
-                        .padding(top = 12.dp),
-                    cornerRadius = 14,
+                        .padding(top = 12.dp)
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(DangerBg)
+                        .padding(horizontal = 14.dp, vertical = 13.dp),
+                    verticalAlignment = Alignment.Top,
                 ) {
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .clip(RoundedCornerShape(10.dp))
-                            .background(if (error != null) DangerBg else CardWhite)
-                            .border(
-                                1.dp,
-                                if (error != null) Danger.copy(alpha = 0.25f) else CardBorder,
-                                RoundedCornerShape(10.dp),
-                            )
-                            .padding(14.dp),
-                        verticalAlignment = Alignment.Top,
-                    ) {
-                        Text("⚠", color = Danger, fontSize = 15.sp)
-                        Spacer(Modifier.width(10.dp))
-                        Text(error ?: "", Modifier.weight(1f), color = Danger, fontSize = 13.sp)
-                    }
+                    Text("!", color = Danger, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                    Spacer(Modifier.width(10.dp))
+                    Text(error ?: "", Modifier.weight(1f), color = Danger, fontSize = 13.sp, lineHeight = 19.sp)
                 }
             }
 
@@ -530,27 +466,27 @@ fun HomeScreen(
                 }
             }
 
-            Spacer(Modifier.height(28.dp))
-
-            // ---- 功能特点 ----
-            Row(
-                Modifier.padding(horizontal = 16.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(
-                    "功能特点",
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = TextDark,
-                )
-            }
+            // ---- 能解析什么 ----
+            Spacer(Modifier.height(34.dp))
+            SectionTitle("能解析什么")
             Spacer(Modifier.height(12.dp))
-            FeatureItem("⚡", "快速处理", "智能识别链接，快速预览作品信息")
-            Spacer(Modifier.height(10.dp))
-            FeatureItem("🎬", "多种格式", "支持视频、图文作品解析下载")
-            Spacer(Modifier.height(10.dp))
-            FeatureItem("📁", "相册保存", "自动保存到系统相册，命名日期+文案")
-            Spacer(Modifier.height(30.dp))
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    GridCell("视频", "无水印直链，整条原画", Modifier.weight(1f))
+                    GridCell("图文", "逐张原图，一次全下", Modifier.weight(1f))
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    GridCell("实况照片", "动态图与静帧封面", Modifier.weight(1f))
+                    GridCell("原声", "作品背景音 MP3", Modifier.weight(1f))
+                }
+            }
+
+            Spacer(Modifier.height(34.dp))
         }
     }
 
@@ -689,3 +625,20 @@ fun HomeScreen(
         onClose = { showLoginOverlay = false },
     )
 }
+
+// ---- 首页专用小组件 ----
+
+@Composable
+private fun GridCell(title: String, desc: String, modifier: Modifier = Modifier) {
+    Column(
+        modifier
+            .clip(RoundedCornerShape(16.dp))
+            .background(Surface2)
+            .padding(horizontal = 16.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Text(title, fontSize = 19.sp, lineHeight = 26.sp, fontWeight = FontWeight.Bold, color = TextDark)
+        Text(desc, style = TypeLabel, color = TextGray)
+    }
+}
+

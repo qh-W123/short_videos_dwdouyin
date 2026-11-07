@@ -23,6 +23,20 @@ object Prefs {
     }
 }
 
+/** 配色偏好：mono / violet / rose / jade / ember / azure，默认 mono（墨白）。 */
+object ThemePrefs {
+    private const val FILE = "dwdouyin_prefs"
+    private const val KEY = "palette_key"
+
+    fun get(context: Context): String =
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE).getString(KEY, "mono") ?: "mono"
+
+    fun set(context: Context, key: String) {
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+            .edit().putString(KEY, key).apply()
+    }
+}
+
 /** 画质偏好：highest / high / balanced / auto，持久化到 SharedPreferences。 */
 object QualityPrefs {
     private const val FILE = "dwdouyin_prefs"

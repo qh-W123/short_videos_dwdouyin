@@ -39,15 +39,20 @@ import com.dwdouyin.app.data.DouyinParser
 import com.dwdouyin.app.data.DownloadEngine
 import com.dwdouyin.app.data.DownloadManager
 import com.dwdouyin.app.data.DownloadState
+import com.dwdouyin.app.data.ThemePrefs
 import com.dwdouyin.app.data.WorkInfo
 import com.dwdouyin.app.ui.DownloadOverlay
+import com.dwdouyin.app.ui.DTheme
 import com.dwdouyin.app.ui.HistoryScreen
 import com.dwdouyin.app.ui.HomeScreen
 import com.dwdouyin.app.ui.ResultScreen
 import com.dwdouyin.app.ui.SettingsScreen
-import com.dwdouyin.app.ui.Teal
-import com.dwdouyin.app.ui.TextSecondary
+import com.dwdouyin.app.ui.BluePrimary
+import com.dwdouyin.app.ui.Surface1
+import com.dwdouyin.app.ui.Surface2
+import com.dwdouyin.app.ui.TextLightGray
 import com.dwdouyin.app.ui.bgGradient
+import com.dwdouyin.app.ui.paletteOf
 import com.dwdouyin.app.ui.theme.DwdouyinTheme
 
 class MainActivity : ComponentActivity() {
@@ -67,6 +72,10 @@ fun AppRoot() {
     val context = LocalContext.current
     val downloadState by DownloadManager.state.collectAsState()
 
+    // 配色：从偏好读取，切主题时整棵树重绘
+    var paletteKey by remember { mutableStateOf(ThemePrefs.get(context)) }
+    val currentPalette = paletteOf(paletteKey)
+
     // 解析结果（非空时展示结果页）
     var parsedWork by remember { mutableStateOf<WorkInfo?>(null) }
 
@@ -80,73 +89,82 @@ fun AppRoot() {
         }
     }
 
-    // 结果页：覆盖在底部导航之上的独立层（解析在首页，选画质在结果页）
-    if (parsedWork != null) {
-        androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
-            ResultScreen(work = parsedWork, onBack = { parsedWork = null })
-            DownloadOverlay(downloadState)
-        }
-        return
-    }
-
-    Box(
-        Modifier
-            .background(bgGradient),
-    ) {
-        Scaffold(
-            containerColor = Color.Transparent,
-            bottomBar = {
-                // 浅色底部导航（对齐参考图二）
-                NavigationBar(
-                    containerColor = Color.White,
-                    tonalElevation = 0.dp,
-                ) {
-                    val tabs = listOf(
-                        Triple("首页", Icons.Filled.Home, 0),
-                        Triple("历史", Icons.Filled.History, 1),
-                        Triple("设置", Icons.Filled.Settings, 2),
-                    )
-                    tabs.forEach { item ->
-                        NavigationBarItem(
-                            selected = tab == item.third,
-                            onClick = { tab = item.third },
-                            icon = { Icon(item.second, contentDescription = item.first) },
-                            label = {
-                                Text(
-                                    item.first,
-                                    fontWeight = if (tab == item.third) FontWeight.SemiBold else FontWeight.Normal,
-                                )
-                            },
-                            colors = NavigationBarItemDefaults.colors(
-                                selectedIconColor = Teal,
-                                selectedTextColor = Teal,
-                                unselectedIconColor = TextSecondary,
-                                unselectedTextColor = TextSecondary,
-                                indicatorColor = Color(0xFFEAF1F9),
-                            ),
-                        )
-                    }
-                }
-            },
-        ) { padding ->
-            Box(Modifier.padding(padding)) {
-                // Tab 平滑转场
-                AnimatedContent(
-                    targetState = tab,
-                    transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(180)) },
-                    label = "tab",
-                ) { current ->
-                    when (current) {
-                        0 -> HomeScreen(
-                            parser = parser,
-                            onParsed = { parsedWork = it },
-                            onOpenSettings = { tab = 2 },
-                        )
-                        1 -> HistoryScreen(visible = true)
-                        else -> SettingsScreen(parser = parser)
-                    }
-                }
+    DTheme(currentPalette) {
+        // 结果页：覆盖在底部导航之上的独立层（解析在首页，选画质在结果页）
+        if (parsedWork != null) {
+            androidx.compose.foundation.layout.Box(Modifier.fillMaxSize()) {
+                ResultScreen(work = parsedWork, onBack = { parsedWork = null })
                 DownloadOverlay(downloadState)
+            }
+            return@DTheme
+        }
+
+        Box(
+            Modifier
+                .background(bgGradient),
+        ) {
+            Scaffold(
+                containerColor = Color.Transparent,
+                bottomBar = {
+                    // 底部导航：选中态用强调色，未选中是灰字，无指示胶囊
+                    NavigationBar(
+                        containerColor = Surface1,
+                        tonalElevation = 0.dp,
+                    ) {
+                        val tabs = listOf(
+                            Triple("首页", Icons.Filled.Home, 0),
+                            Triple("历史", Icons.Filled.History, 1),
+                            Triple("设置", Icons.Filled.Settings, 2),
+                        )
+                        tabs.forEach { item ->
+                            NavigationBarItem(
+                                selected = tab == item.third,
+                                onClick = { tab = item.third },
+                                icon = { Icon(item.second, contentDescription = item.first) },
+                                label = {
+                                    Text(
+                                        item.first,
+                                        fontWeight = if (tab == item.third) FontWeight.SemiBold else FontWeight.Normal,
+                                    )
+                                },
+                                colors = NavigationBarItemDefaults.colors(
+                                    selectedIconColor = BluePrimary,
+                                    selectedTextColor = BluePrimary,
+                                    unselectedIconColor = TextLightGray,
+                                    unselectedTextColor = TextLightGray,
+                                    indicatorColor = Surface2,
+                                ),
+                            )
+                        }
+                    }
+                },
+            ) { padding ->
+                Box(Modifier.padding(padding)) {
+                    // Tab 平滑转场
+                    AnimatedContent(
+                        targetState = tab,
+                        transitionSpec = { fadeIn(tween(220)) togetherWith fadeOut(tween(180)) },
+                        label = "tab",
+                    ) { current ->
+                        when (current) {
+                            0 -> HomeScreen(
+                                parser = parser,
+                                onParsed = { parsedWork = it },
+                                onOpenSettings = { tab = 2 },
+                            )
+                            1 -> HistoryScreen(visible = true)
+                            else -> SettingsScreen(
+                                parser = parser,
+                                paletteKey = paletteKey,
+                                onPaletteChange = { key ->
+                                    paletteKey = key
+                                    ThemePrefs.set(context, key)
+                                },
+                            )
+                        }
+                    }
+                    DownloadOverlay(downloadState)
+                }
             }
         }
     }

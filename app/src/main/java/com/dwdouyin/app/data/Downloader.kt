@@ -3,7 +3,9 @@ package com.dwdouyin.app.data
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.IOException
 import java.io.OutputStream
@@ -32,6 +34,20 @@ object DownloadEngine {
     private const val READ_TIMEOUT_MS = 60_000
 
     /**
+     * 当前活动的连接。取消时由 [abort] 从外部断开，
+     * 否则阻塞中的 inputStream.read 要等到读超时才返回。
+     */
+    @Volatile
+    private var activeConnection: HttpURLConnection? = null
+
+    /** 外部取消：立刻断开在途连接，让阻塞读抛异常退出。 */
+    fun abort() {
+        val conn = activeConnection
+        activeConnection = null
+        runCatching { conn?.disconnect() }
+    }
+
+    /**
      * Cookie 提供者：由界面注入 WebView 导出的 Cookie，
      * 视频直链需要防盗链校验，缺少 Cookie 会 403。
      */
@@ -52,27 +68,32 @@ object DownloadEngine {
     ): Long = withContext(Dispatchers.IO) {
         var lastError: Exception? = null
         repeat(MAX_RETRY) { attempt ->
+            currentCoroutineContext().ensureActive()
             if (attempt > 0) delay(1500L * attempt)
             try {
                 return@withContext downloadOnce(url, openSink, onProgress)
             } catch (e: CancellationException) {
                 throw e
+            } catch (e: DownloadException.Cancelled) {
+                throw e
             } catch (e: DownloadException) {
                 if (e is DownloadException.Forbidden || e is DownloadException.Gone) throw e
                 lastError = e
             } catch (e: Exception) {
+                currentCoroutineContext().ensureActive()
                 lastError = DownloadException.Network(e.message ?: "未知错误")
             }
         }
         throw lastError ?: DownloadException.Network("下载失败")
     }
 
-    private fun downloadOnce(
+    private suspend fun downloadOnce(
         url: String,
         openSink: () -> OutputStream,
         onProgress: (Long, Long, Long) -> Unit,
     ): Long {
         val conn = URL(url).openConnection() as HttpURLConnection
+        activeConnection = conn
         try {
             conn.connectTimeout = TIMEOUT_MS
             conn.readTimeout = READ_TIMEOUT_MS
@@ -108,6 +129,9 @@ object DownloadEngine {
                 openSink().use { output ->
                     val buffer = ByteArray(BUFFER_SIZE)
                     while (true) {
+                        // 每个 256KB 块检查一次取消：协程被 cancel 后立即抛出，
+                        // 不会再边取消边把整条视频下完。
+                        currentCoroutineContext().ensureActive()
                         val read = input.read(buffer)
                         if (read < 0) break
                         output.write(buffer, 0, read)
@@ -122,12 +146,14 @@ object DownloadEngine {
                     }
                 }
             }
+            currentCoroutineContext().ensureActive()
             onProgress(received, total, 0)
             return received
         } catch (e: SocketTimeoutException) {
             throw DownloadException.Timeout()
         } finally {
-            conn.disconnect()
+            if (activeConnection === conn) activeConnection = null
+            runCatching { conn.disconnect() }
         }
     }
 }
