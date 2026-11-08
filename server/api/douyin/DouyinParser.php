@@ -306,9 +306,10 @@ class DouyinParser
             }
         } else {
             $result['type'] = 'video';
+            $videoNode = is_array($detail['video'] ?? null) ? $detail['video'] : [];
             $videoInfo = $this->extractHighestQualityVideo($detail);
 
-            $playUri = $this->extractVidFromVideoInfo(is_array($detail['video'] ?? null) ? $detail['video'] : []);
+            $playUri = $this->extractVidFromVideoInfo($videoNode);
             $main = $videoInfo['url'];
             if ($main) {
                 $main = $this->toHttps(str_replace('playwm', 'play', $main));
@@ -327,23 +328,38 @@ class DouyinParser
                 $result['quality'] = $videoInfo['gearName'];
             }
 
-            // 补齐抖音 CDN 约定参数 mime_type=video_mp4；主地址先归一，保证下面去重比较口径一致
+            // 补齐抖音 CDN 约定参数 mime_type=video_mp4；主地址先归一，保证去重比较口径一致
             $main = $this->ensureVideoMimeType($main);
 
-            $backups = [];
-            foreach ($videoInfo['backup'] as $candidate) {
-                $converted = $this->ensureVideoMimeType($this->toHttps(str_replace('playwm', 'play', $candidate)));
-                if ($converted && $converted !== $main && !in_array($converted, $backups, true)) {
-                    $backups[] = $converted;
-                }
-            }
+            // 全画质档位：对齐 api-new.ifphp.com/api/dyjx 的 video_backup 对象数组
+            $variants = $this->buildQualityVariants($videoNode, $main);
+            $result['video_backup'] = $variants['list'];
+
+            // 主档元信息（宽高/码率/编码/帧率），与 dyjx 顶层字段一致
+            $result['label'] = $variants['label'];
+            $result['width'] = $variants['width'];
+            $result['height'] = $variants['height'];
+            $result['bit_rate'] = $variants['bit_rate'];
+            $result['quality_type'] = $variants['quality_type'];
+            $result['fps'] = $variants['fps'];
+            $result['format'] = $variants['format'];
+            $result['codec'] = $variants['codec'];
 
             $result['url'] = $main;
             if ($main) {
-                $result['size'] = $this->probeVideoSize($main);
-                $result['size_label'] = $this->formatSizeLabel($result['size']);
+                $size = $this->probeVideoSize($main);
+                if (!$size) {
+                    $size = $variants['size'];
+                }
+                $result['size'] = $size;
+                $result['size_label'] = $this->formatSizeLabel($size);
+                $duration = isset($result['duration']) && is_numeric($result['duration']) ? (float)$result['duration'] : 0.0;
+                $result['real_bit_rate'] = ($size > 0 && $duration > 0)
+                    ? (int)round($size * 8 / $duration)
+                    : $variants['bit_rate'];
+            } else {
+                $result['real_bit_rate'] = 0;
             }
-            $result['video_backup'] = $backups;
             $result['video_id'] = $playUri ?: $fallbackVideoId;
         }
 
@@ -575,6 +591,225 @@ class DouyinParser
         }
 
         return ['url' => $url, 'backup' => $backup, 'gearName' => $gearName];
+    }
+
+    /**
+     * 构建全画质档位列表，对齐 api-new.ifphp.com/api/dyjx 的 video_backup 对象数组
+     *
+     * 每档含 label / quality / url / bit_rate / width / height / size / size_label /
+     * format / codec / quality_type / gear_name，并按长边档位 + 码率降序去重。
+     *
+     * @param array       $videoNode 原始 video 节点（含 bit_rate / width / height / duration）
+     * @param string|null $mainUrl   已确定的主档（原画）直链
+     * @return array{list:array<int,array<string,mixed>>,label:string,width:int,height:int,bit_rate:int,quality_type:int,fps:int,format:string,codec:string,size:int}
+     */
+    private function buildQualityVariants($videoNode, $mainUrl)
+    {
+        $durationMs = isset($videoNode['duration']) && is_numeric($videoNode['duration'])
+            ? (float)$videoNode['duration']
+            : 0.0;
+        $durationSec = $durationMs > 1000 ? $durationMs / 1000 : $durationMs;
+
+        $rawList = [];
+        if (!empty($videoNode['bitRateList']) && is_array($videoNode['bitRateList'])) {
+            $rawList = $videoNode['bitRateList'];
+        } elseif (!empty($videoNode['bit_rate']) && is_array($videoNode['bit_rate'])) {
+            $rawList = $videoNode['bit_rate'];
+        }
+
+        $mainNormalized = $this->normalizeForCompare($mainUrl);
+        $buckets = [];
+        $seenUrls = [];
+
+        foreach ($rawList as $rateItem) {
+            if (!is_array($rateItem)) {
+                continue;
+            }
+
+            $candidates = [];
+            foreach ($this->collectPlayUrlCandidates($rateItem) as $candidate) {
+                $converted = $this->ensureVideoMimeType(
+                    $this->toHttps(str_replace('playwm', 'play', $candidate))
+                );
+                if ($converted !== '' && $converted !== null) {
+                    $candidates[] = $converted;
+                }
+            }
+            if (!$candidates) {
+                continue;
+            }
+
+            // 优先 v3-web，其次把 v26-web 换域名，最后退首个候选
+            $picked = null;
+            foreach ($candidates as $candidate) {
+                if (strpos($candidate, 'v3-web') !== false) {
+                    $picked = $candidate;
+                    break;
+                }
+            }
+            if ($picked === null) {
+                foreach ($candidates as $candidate) {
+                    if (strpos($candidate, 'v26-web') !== false) {
+                        $picked = $this->ensureVideoMimeType($this->replacePlayHost($candidate));
+                        break;
+                    }
+                }
+            }
+            if ($picked === null) {
+                $picked = $candidates[0];
+            }
+
+            $key = $this->normalizeForCompare($picked);
+            if ($key === '' || $key === $mainNormalized || isset($seenUrls[$key])) {
+                continue;
+            }
+            $seenUrls[$key] = true;
+
+            $playNode = is_array($rateItem['play_addr'] ?? null) ? $rateItem['play_addr'] : [];
+            $width = isset($playNode['width']) ? (int)$playNode['width'] : 0;
+            $height = isset($playNode['height']) ? (int)$playNode['height'] : 0;
+
+            $gearName = $this->strv($rateItem['gearName'] ?? $rateItem['gear_name'] ?? '');
+            if (($width <= 0 || $height <= 0) && $gearName !== '') {
+                // gear_name 形如 normal_720_0 / 720_1_1 / 540_2_1，取其中三位以上数字当短边
+                if (preg_match('/(?<!\d)(\d{3,4})(?!\d)/', $gearName, $m)) {
+                    $guess = (int)$m[1];
+                    if ($width <= 0 && $height <= 0) {
+                        $width = $guess;
+                        $height = $guess;
+                    }
+                }
+            }
+
+            $bitRate = (int)($rateItem['bit_rate'] ?? $rateItem['bitRate'] ?? 0);
+            $size = isset($playNode['data_size']) ? (int)$playNode['data_size'] : 0;
+            $qualityType = isset($rateItem['quality_type']) ? (int)$rateItem['quality_type'] : 0;
+            $fps = isset($rateItem['FPS']) ? (int)$rateItem['FPS'] : 0;
+            $format = $this->strv($rateItem['format'] ?? '') ?: 'mp4';
+
+            $isH265 = !empty($rateItem['is_h265']);
+            $isBytevc1 = !empty($rateItem['is_bytevc1']);
+            $codec = $isBytevc1 ? 'bytevc1' : ($isH265 ? 'h265_hvc1' : 'h264');
+
+            $shortEdge = $width > 0 && $height > 0 ? min($width, $height) : max($width, $height);
+            [$label, $quality] = $this->resolveQualityTier($shortEdge);
+
+            $entry = [
+                'label' => $label,
+                'quality' => $quality,
+                'url' => $picked,
+                'bit_rate' => $bitRate,
+                'width' => $width,
+                'height' => $height,
+                'size' => $size,
+                'size_label' => $this->formatSizeLabel($size),
+                'format' => $format,
+                'codec' => $codec,
+                'quality_type' => $qualityType,
+                'gear_name' => $gearName,
+            ];
+
+            // 同一档位保留码率最高的一条
+            if (!isset($buckets[$quality]) || $bitRate > $buckets[$quality]['bit_rate']) {
+                $buckets[$quality] = $entry;
+            }
+        }
+
+        $list = array_values($buckets);
+        usort($list, function ($a, $b) {
+            $sa = $a['width'] > 0 && $a['height'] > 0 ? min($a['width'], $a['height']) : 0;
+            $sb = $b['width'] > 0 && $b['height'] > 0 ? min($b['width'], $b['height']) : 0;
+            if ($sa === $sb) {
+                return ($b['bit_rate'] ?? 0) <=> ($a['bit_rate'] ?? 0);
+            }
+            return $sb <=> $sa;
+        });
+
+        // ---- 主档元信息 ----
+        $mainWidth = isset($videoNode['width']) ? (int)$videoNode['width'] : 0;
+        $mainHeight = isset($videoNode['height']) ? (int)$videoNode['height'] : 0;
+        $mainSize = 0;
+        $playAddr = is_array($videoNode['play_addr'] ?? null) ? $videoNode['play_addr'] : [];
+        if (isset($playAddr['data_size'])) {
+            $mainSize = (int)$playAddr['data_size'];
+        }
+        if ($mainWidth <= 0 && isset($playAddr['width'])) {
+            $mainWidth = (int)$playAddr['width'];
+        }
+        if ($mainHeight <= 0 && isset($playAddr['height'])) {
+            $mainHeight = (int)$playAddr['height'];
+        }
+
+        $mainFps = 0;
+        $mainFormat = $this->strv($videoNode['format'] ?? '') ?: 'mp4';
+        $mainCodec = !empty($videoNode['is_bytevc1'])
+            ? 'bytevc1'
+            : (!empty($videoNode['is_h265']) ? 'h265_hvc1' : 'h264');
+
+        // 主档画质标签：原画（302 解析成功）→ 否则按短边档位
+        $isOriginal = true;
+        $mainLabel = '原画';
+        $mainQualityType = 64;
+        $mainBitRate = $durationSec > 0 && $mainSize > 0
+            ? (int)round($mainSize * 8 / $durationSec)
+            : 0;
+
+        if ($mainBitRate <= 0) {
+            // 回退：取最高档的码率作主档码率
+            $mainBitRate = $list ? (int)$list[0]['bit_rate'] : 0;
+        }
+
+        return [
+            'list' => $list,
+            'label' => $mainLabel,
+            'width' => $mainWidth,
+            'height' => $mainHeight,
+            'bit_rate' => $mainBitRate,
+            'quality_type' => $mainQualityType,
+            'fps' => $mainFps > 0 ? $mainFps : (isset($videoNode['fps']) ? (int)$videoNode['fps'] : 30),
+            'format' => $mainFormat,
+            'codec' => $mainCodec,
+            'size' => $mainSize,
+        ];
+    }
+
+    /**
+     * 短边像素 → [中文档位名, quality 标识]
+     *
+     * 720 及以上用固定档位名；720 以下直接用精确像素（如 576P / 540P），
+     * 避免不同分辨率被归并成同一档导致画质选项丢失。
+     */
+    private function resolveQualityTier($shortEdge)
+    {
+        if ($shortEdge >= 2160) {
+            return ['4K', '4k'];
+        }
+        if ($shortEdge >= 1440) {
+            return ['2K', '2k'];
+        }
+        if ($shortEdge >= 1080) {
+            return ['1080P高清', '1080p'];
+        }
+        if ($shortEdge >= 720) {
+            return ['720P高清', '720p'];
+        }
+        if ($shortEdge > 0) {
+            return [$shortEdge . 'P', $shortEdge . 'p'];
+        }
+        return ['备用线路', 'backup'];
+    }
+
+    /**
+     * 去重比较用的地址归一：只保留 host + path 主干，忽略时效性查询串
+     */
+    private function normalizeForCompare($url)
+    {
+        $url = $this->strv($url);
+        if ($url === '') {
+            return '';
+        }
+        $hashPos = strpos($url, '?');
+        return $hashPos === false ? $url : substr($url, 0, $hashPos);
     }
 
     /**

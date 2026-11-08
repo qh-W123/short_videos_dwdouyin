@@ -757,7 +757,14 @@ class DouyinParser(private val context: Context) {
         return item
     }
 
-    /** suxun 系通道合成 item：单档直链。 */
+    /**
+     * suxun / 自建 douyin.php 通道合成 item。
+     *
+     * 3.3.2：兼容 `video_backup` 的两种形态 —— 字符串数组（旧版 short_videos）
+     * 与对象数组（对齐 api-new.ifphp.com/api/dyjx，每项含 label/quality/
+     * url/bit_rate/width/height/size/format/codec/quality_type/gear_name）。
+     * 对象数组会展开成 video.bit_rate，让结果页显示全部画质档位。
+     */
     private fun buildSuxunItem(awemeId: String, data: JSONObject): JSONObject? {
         val videoUrl = data.optString("url").orEmpty()
         val imagesArr = data.optJSONArray("images")
@@ -787,17 +794,60 @@ class DouyinParser(private val context: Context) {
             return item
         }
 
+        // 3.3.2：把 video_backup 的对象数组展开成 video.bit_rate 多档
+        val bitRate = JSONArray()
+        val backup = data.optJSONArray("video_backup")
+        if (backup != null) {
+            for (i in 0 until backup.length()) {
+                val vb = backup.optJSONObject(i) ?: continue
+                val vUrl = vb.optString("url").orEmpty()
+                if (vUrl.isBlank()) continue
+                if (vUrl == videoUrl) continue
+                val vQuality = vb.optString("quality").orEmpty()
+                val vLabel = vb.optString("label").orEmpty()
+                val vGear = vQuality.ifBlank { vLabel }.ifBlank { "backup" }
+                val vWidth = vb.optInt("width", 0)
+                val vHeight = vb.optInt("height", 0)
+                bitRate.put(
+                    JSONObject().apply {
+                        put("gear_name", vGear)
+                        put("bit_rate", vb.optLong("bit_rate", 0L))
+                        put("quality_type", vb.optInt("quality_type", 0))
+                        // 让 buildVideoMedia 直接显示中文档位名（720P高清 / 540P）
+                        put("label", vLabel.ifBlank { vGear })
+                        put(
+                            "play_addr",
+                            JSONObject().apply {
+                                put("url_list", JSONArray().put(vUrl))
+                                put("data_size", vb.optLong("size", 0L))
+                                put("width", vWidth)
+                                put("height", vHeight)
+                            },
+                        )
+                    },
+                )
+            }
+        }
+
+        val mainWidth = data.optInt("width", 0)
+        val mainHeight = data.optInt("height", 0)
+        val mainSize = data.optLong("size", 0L)
+
         item.put(
             "video",
             JSONObject().apply {
                 put("play_addr", JSONObject().apply {
                     put("url_list", JSONArray().put(videoUrl))
-                    put("data_size", 0L)
+                    put("data_size", mainSize)
+                    put("width", mainWidth)
+                    put("height", mainHeight)
                 })
                 put("cover", JSONObject().apply {
                     put("url_list", JSONArray().put(data.optString("cover")))
                 })
-                put("bit_rate", JSONArray())
+                put("bit_rate", bitRate)
+                // 主档名用接口给的 label（如「原画」）
+                put("main_label", data.optString("label").ifBlank { "原画" })
             },
         )
         return item
@@ -1258,13 +1308,17 @@ class DouyinParser(private val context: Context) {
                 val gear = rate.optString("gear_name")
                 val bitrate = rate.optLong("bit_rate", 0L)
                 val resMatch = Regex("(\\d{3,4})").find(gear)
+                // 3.3.2：接口若给了中文档位名（720P高清 / 540P）优先用它
+                val apiLabel = rate.optString("label").trim()
                 val (height, label) = when {
                     gear.contains("4k", ignoreCase = true) -> 2160 to "4K"
-                    resMatch != null -> resMatch.groupValues[1].toInt() to gear
+                    resMatch != null -> resMatch.groupValues[1].toInt() to
+                        apiLabel.ifBlank { gear }
                     gear.contains("origin", ignoreCase = true) -> 9998 to "原画"
                     else -> {
                         val kbps = (bitrate / 1000).toInt()
                         0 to when {
+                            apiLabel.isNotBlank() -> apiLabel
                             kbps > 0 -> "${kbps}kbps"
                             // 没有档位信息的 gear_name 直接当标签用
                             gear.isNotBlank() -> gear

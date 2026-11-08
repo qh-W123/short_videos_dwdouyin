@@ -21,8 +21,8 @@ android {
         applicationId = "com.dwdouyin.app"
         minSdk = 26
         targetSdk = 34
-        versionCode = 25
-        versionName = "3.3.1"
+        versionCode = 26
+        versionName = "3.3.2"
     }
 
     signingConfigs {

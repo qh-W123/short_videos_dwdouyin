@@ -476,7 +476,7 @@ fun SettingsScreen(
             GlassCard(cornerRadius = 18) {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text("关于", fontWeight = FontWeight.Bold, color = TextPrimary, fontSize = 15.sp)
-                    Text("dwdouyin 抖音作品解析下载工具 v3.3.1", fontSize = 12.sp, color = TextSecondary)
+                    Text("dwdouyin 抖音作品解析下载工具 v3.3.2", fontSize = 12.sp, color = TextSecondary)
                     Text(
                         "仅用于个人技术学习，禁止商用、批量爬取，遵守版权法规。",
                         fontSize = 11.sp,
