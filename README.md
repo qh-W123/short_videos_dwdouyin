@@ -12,7 +12,7 @@
 ├── desktop/      Windows 桌面客户端（C# WPF / .NET 6）
 ├── server/       PHP 解析服务器（short_videos，MIT）
 └── dist/         已打包的成品
-    ├── dwdouyin-v3.3.1.apk
+    ├── dwdouyin-v3.3.2.apk
     └── DwDouyin.exe
 ```
 
@@ -123,16 +123,32 @@ DwDouyin.exe --selftest "https://v.douyin.com/xxxxx/" [--download]
     "cover": "https://...",
     "url": "https://... 视频直链",
     "quality": "original",
+    "label": "原画",
     "size": 335424499,
     "size_label": "319.89 MB",
     "duration": 303.6,
-    "video_backup": ["https://...", "https://..."],
-    "music": { "title": "...", "url": "https://...", "author": "..." }
+    "width": 1080, "height": 1920,
+    "bit_rate": 8838269, "real_bit_rate": 8838269, "quality_type": 64,
+    "fps": 30, "format": "mp4", "codec": "h264", "video_id": "v0200fg...",
+    "video_backup": [
+      {
+        "label": "1080P高清", "quality": "1080p", "url": "https://...",
+        "bit_rate": 262144, "width": 1080, "height": 1920,
+        "size": 2689247, "size_label": "2.56MB",
+        "format": "mp4", "codec": "h265_hvc1", "quality_type": 8,
+        "gear_name": "normal_1080_0"
+      },
+      { "label": "720P高清", "quality": "720p", "url": "https://...", "..." : "..." }
+    ],
+    "music": { "title": "...", "url": "https://...", "author": "...", "cover": "..." }
   }
 }
 ```
 
-> `video_backup` 是**字符串数组**（不是对象数组），客户端解析时注意类型判断。
+> **v3.3.2 起 `video_backup` 是对象数组**（对齐 `api-new.ifphp.com/api/dyjx` 的完整画质格式），
+> 每项带 `label/quality/url/bit_rate/width/height/size/size_label/format/codec/quality_type/gear_name`；
+> `data` 顶层也补齐了 `label/width/height/bit_rate/quality_type/real_bit_rate/fps/format/codec`。
+> 旧版是纯字符串数组，客户端 `buildSuxunItem` 已做兼容（两种形态都能解析）。无需 API Key。
 
 ### 部署（Docker 方式）
 
@@ -159,6 +175,14 @@ curl "http://<服务器IP>/api/douyin/douyin.php?url=https://v.douyin.com/xxxxx/
 2. **短链末尾斜杠不能省**：`https://v.douyin.com/xxxxx`（无尾斜杠）会返回 HTTP 500 空响应，`https://v.douyin.com/xxxxx/` 才正常。客户端提取链接时不要做 `TrimEnd('/')`。
 
 ## 更新日志
+
+### v3.3.2
+
+- 自建解析服务器 `server/api/douyin/DouyinParser.php` 输出对齐 `api-new.ifphp.com/api/dyjx` 的**完整多画质 JSON**：把上游 `video.bit_rate` 展开成 `video_backup` 对象数组，每档带档位名、分辨率、码率、大小、编码、格式；`data` 顶层补齐 `label/width/height/bit_rate/quality_type/real_bit_rate/fps/format/codec`
+- 修复结果页**只显示一个画质档**：`buildSuxunItem` 兼容字符串/对象两种 `video_backup` 并展开成 `video.bit_rate`，`buildVideoMedia` 优先使用接口给的中文档位名
+- 无需 API Key、无需改通道配置即可看到全部画质档位
+- PC 桌面端同步受益（画质档位从 4 档增至 5 档，且显示真实档位名/大小/分辨率）
+- 版本号 3.3.2（versionCode 26）
 
 ### v3.3.1
 
