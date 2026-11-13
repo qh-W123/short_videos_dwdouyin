@@ -10,9 +10,13 @@
  */
 
 require_once 'DouyinParser.php';
+require_once __DIR__ . '/../_analytics.php';
 
 header("Access-Control-Allow-Origin: *");
 header('Content-Type: application/json; charset=utf-8');
+
+$dyStartedAt = microtime(true);
+$dyCacheState = 'miss';
 
 // 获取请求参数（GET 原样截取 url= 之后的完整内容，兼容未编码的分享文本）
 $url = null;
@@ -104,11 +108,48 @@ function dy_cache_key($url)
     return 'h_' . substr(md5($url), 0, 20);
 }
 
+/**
+ * 把响应发给客户端后记录访问日志。
+ *
+ * 用 fastcgi_finish_request() 先把响应刷给客户端，再做地理查询与落盘，
+ * 这样首次遇到新 IP 时的 1-3s 地理查询不会拖慢接口响应。
+ */
+function dy_finish_and_log($url, $body, $cacheState, $startedAt)
+{
+    // 内网自转发（sv.php -> 单平台）不重复记录，由 sv.php 那次请求统一记录
+    $remote = (string)($_SERVER['REMOTE_ADDR'] ?? '');
+    if ($remote === '172.31.0.10') {
+        return;
+    }
+
+    $json = json_decode($body, true);
+    $data = (is_array($json) && is_array($json['data'] ?? null)) ? $json['data'] : [];
+    $author = is_array($data['author'] ?? null) ? (string)($data['author']['name'] ?? '') : '';
+
+    $ctx = [
+        'target' => (string)$url,
+        'aweme_id' => (string)($data['aweme_id'] ?? '') ?: dy_extract_aweme_id((string)$url),
+        'code' => is_array($json) ? (int)($json['code'] ?? 0) : 0,
+        'msg' => is_array($json) ? (string)($json['msg'] ?? '') : '',
+        'title' => (string)($data['title'] ?? ''),
+        'author' => $author,
+        'video_id' => (string)($data['video_id'] ?? ''),
+        'cache' => $cacheState,
+        'rt' => microtime(true) - $startedAt,
+    ];
+
+    if (function_exists('fastcgi_finish_request')) {
+        fastcgi_finish_request();
+    }
+    dy_log_request($ctx);
+}
+
 $cacheTtl = 300;
 $cached = dy_cache_read($url, $cacheTtl);
 if ($cached !== null) {
     header('X-Dy-Cache: hit');
     echo $cached;
+    dy_finish_and_log($url, $cached, 'hit', $dyStartedAt);
     exit;
 }
 
@@ -117,3 +158,4 @@ $body = $parser->parse($url);
 header('X-Dy-Cache: miss');
 dy_cache_write($url, $body);
 echo $body;
+dy_finish_and_log($url, $body, 'miss', $dyStartedAt);

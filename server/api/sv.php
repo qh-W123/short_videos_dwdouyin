@@ -9,49 +9,72 @@
  * @tip: 短视频聚合解析：一个入口自动识别平台，转发到对应的单平台解析接口
  */
 
+require_once '_analytics.php';
+
 header('Access-Control-Allow-Origin: *');
 header('Content-Type: application/json; charset=utf-8');
+
+// 访问分析上下文：主流程各分支只需填充，shutdown 时统一落盘
+$GLOBALS['sv_ctx'] = [
+    'target' => '',
+    'aweme_id' => '',
+    'platform' => '',
+    'code' => 0,
+    'msg' => '',
+    'title' => '',
+    'author' => '',
+    'video_id' => '',
+    'cache' => '',
+    'rt' => 0,
+];
+$GLOBALS['sv_started'] = microtime(true);
 
 // ==================== 配置区域 ====================
 // 平台关键词与对应单平台接口的路径（相对本文件所在目录）。
 // 如需转发到其他站点，将 path 改为完整 URL 即可，
 // 例如 'https://api.bugpk.com/api/douyin/douyin.php'。
+//
+// 反向代理/容器部署时，若无法通过公网域名回环访问自身（例如只暴露了 443 而
+// 内部服务只监听 http），可设置环境变量 DY_INNER_BASE 指向内网入口，
+// 例如 http://inner-web/xxxx，此时会拼成 {DY_INNER_BASE}/api/douyin/douyin.php。
+$innerBase = rtrim(trim((string)getenv('DY_INNER_BASE')), '/');
+
 $platforms = [
     'douyin' => [
         'keywords' => ['douyin', 'iesdouyin'],
-        'path' => 'douyin/douyin.php',
+        'path' => $innerBase !== '' ? $innerBase . '/api/douyin/douyin.php' : 'douyin/douyin.php',
     ],
     'kuaishou' => [
         'keywords' => ['kuaishou'],
-        'path' => 'kuaishou/ksjx.php',
+        'path' => $innerBase !== '' ? $innerBase . '/api/kuaishou/ksjx.php' : 'kuaishou/ksjx.php',
     ],
     'xiaohongshu' => [
         'keywords' => ['xhs', 'xiaohongshu'],
-        'path' => 'xiaohongshu/xhsjx.php',
+        'path' => $innerBase !== '' ? $innerBase . '/api/xiaohongshu/xhsjx.php' : 'xiaohongshu/xhsjx.php',
     ],
     'bilibili' => [
         'keywords' => ['bilibili', 'b23'],
-        'path' => 'bilibili/bilibili.php',
+        'path' => $innerBase !== '' ? $innerBase . '/api/bilibili/bilibili.php' : 'bilibili/bilibili.php',
     ],
     'weibo' => [
         'keywords' => ['weibo'],
-        'path' => 'weibo.php',
+        'path' => $innerBase !== '' ? $innerBase . '/api/weibo.php' : 'weibo.php',
     ],
     'toutiao' => [
         'keywords' => ['toutiao'],
-        'path' => 'toutiao.php',
+        'path' => $innerBase !== '' ? $innerBase . '/api/toutiao.php' : 'toutiao.php',
     ],
     'pipixia' => [
         'keywords' => ['pipix'],
-        'path' => 'ppxia.php',
+        'path' => $innerBase !== '' ? $innerBase . '/api/ppxia.php' : 'ppxia.php',
     ],
     'pipigx' => [
         'keywords' => ['ippzone', 'pipigx'],
-        'path' => 'pipigx.php',
+        'path' => $innerBase !== '' ? $innerBase . '/api/pipigx.php' : 'pipigx.php',
     ],
     'zuiyou' => [
         'keywords' => ['izuiyou'],
-        'path' => 'zuiyou.php',
+        'path' => $innerBase !== '' ? $innerBase . '/api/zuiyou.php' : 'zuiyou.php',
     ],
 ];
 
@@ -61,8 +84,18 @@ $requestTimeout = 30;
 // 允许参与上游接口地址构造的域名白名单（精确匹配，支持带端口）。
 // 留空 = 仅信任 Web 服务器配置的 SERVER_NAME（无法被请求头伪造），
 // 防止伪造 Host 头把聚合转发指到任意主机（SSRF）。
-// 反向代理/多域名部署时在此列出本站域名，例如 ['api.example.com', 'www.example.com']。
+// 反向代理/多域名部署时在此列出本站域名，例如 ['api.example.com', 'www.example.com']，
+// 或通过环境变量 DY_ALLOWED_HOSTS 以逗号分隔注入。
 $allowedHosts = [];
+$envHosts = trim((string)getenv('DY_ALLOWED_HOSTS'));
+if ($envHosts !== '') {
+    foreach (explode(',', $envHosts) as $h) {
+        $h = trim($h);
+        if ($h !== '') {
+            $allowedHosts[] = $h;
+        }
+    }
+}
 
 // 是否允许私网/保留地址作为本站域名（127.0.0.1、内网 IP 等）。
 // 仅本地开发（php -S、localhost 调试）临时置为 true；生产环境必须保持 false，
@@ -77,6 +110,19 @@ function outputJson($data, $statusCode = 200)
 {
     http_response_code($statusCode);
     echo json_encode($data, 480);
+
+    // 分支提前返回时也要记录访问日志（响应已输出，后续耗时不影响客户端）
+    if (!empty($GLOBALS['sv_ctx'])) {
+        $ctx = $GLOBALS['sv_ctx'];
+        $ctx['code'] = (int)($data['code'] ?? 0);
+        $ctx['msg'] = (string)($data['msg'] ?? '');
+        $ctx['rt'] = round(microtime(true) - (float)($GLOBALS['sv_started'] ?? microtime(true)), 3);
+        if (function_exists('fastcgi_finish_request')) {
+            fastcgi_finish_request();
+        }
+        dy_log_request($ctx);
+        $GLOBALS['sv_ctx'] = [];
+    }
     exit;
 }
 
@@ -97,9 +143,10 @@ function extractShareUrl($text)
 function matchPlatform($text, $platforms)
 {
     $lower = strtolower($text);
-    foreach ($platforms as $config) {
+    foreach ($platforms as $key => $config) {
         foreach ($config['keywords'] as $keyword) {
             if (strpos($lower, $keyword) !== false) {
+                $config['key'] = (string)$key;
                 return $config;
             }
         }
@@ -139,7 +186,13 @@ function resolveRequestHost($allowedHosts, $allowPrivateHosts)
 
     $httpHost = strtolower(trim($_SERVER['HTTP_HOST'] ?? ''));
     $serverName = strtolower(trim($_SERVER['SERVER_NAME'] ?? ''));
-    if ($serverName === '' && $httpHost === '') {
+    // 反向代理会把 HTTP_HOST 改写成内部地址，真实对外域名通过 X-Forwarded-Host 传入；
+    // 仅在其命中白名单时采信。
+    $forwardedHost = strtolower(trim($_SERVER['HTTP_X_FORWARDED_HOST'] ?? ''));
+    if ($forwardedHost !== '' && strpos($forwardedHost, ',') !== false) {
+        $forwardedHost = strtolower(trim(explode(',', $forwardedHost)[0]));
+    }
+    if ($serverName === '' && $httpHost === '' && $forwardedHost === '') {
         return '';
     }
 
@@ -147,6 +200,9 @@ function resolveRequestHost($allowedHosts, $allowPrivateHosts)
         $allow = array_map(function ($h) {
             return strtolower(trim($h));
         }, $allowedHosts);
+        if ($forwardedHost !== '' && in_array($hostOnly($forwardedHost), $allow, true)) {
+            return $hostOnly($forwardedHost);
+        }
         if ($httpHost !== '' && in_array($hostOnly($httpHost), $allow, true)) {
             return $httpHost;
         }
@@ -246,20 +302,33 @@ if (!$url && isset($_GET['url'])) {
 }
 
 if ($url === '' || ($shareUrl = extractShareUrl($url)) === null) {
+    $GLOBALS['sv_ctx']['target'] = (string)$url;
     outputJson(['code' => 400, 'msg' => '请输入有效的链接', 'data' => []], 200);
 }
 
+$GLOBALS['sv_ctx']['target'] = (string)$url;
+$GLOBALS['sv_ctx']['aweme_id'] = dy_extract_aweme_id((string)$url);
+
 $platform = matchPlatform($url, $platforms);
 if (!$platform) {
+    $GLOBALS['sv_ctx']['platform'] = '';
     outputJson(['code' => 201, 'msg' => '不支持您输入的链接平台', 'data' => []], 200);
 }
+$GLOBALS['sv_ctx']['platform'] = (string)($platform['key'] ?? '');
 
-$requestHost = resolveRequestHost($allowedHosts, $allowPrivateHosts);
-if ($requestHost === '') {
-    outputJson(['code' => 500, 'msg' => '无法确定本站域名，请在 api/sv.php 配置 $allowedHosts', 'data' => []], 200);
+// 平台接口配置为完整 URL（内网直连）时无需推断本站域名；
+// 配置为相对路径时才需要可信域名来拼接。
+if (stripos($platform['path'], 'http') === 0) {
+    $endpointBase = $platform['path'];
+} else {
+    $requestHost = resolveRequestHost($allowedHosts, $allowPrivateHosts);
+    if ($requestHost === '') {
+        outputJson(['code' => 500, 'msg' => '无法确定本站域名，请在 api/sv.php 配置 $allowedHosts', 'data' => []], 200);
+    }
+    $endpointBase = buildEndpoint($platform['path'], $requestHost);
 }
 
-$endpoint = buildEndpoint($platform['path'], $requestHost) . '?url=' . urlencode($shareUrl);
+$endpoint = $endpointBase . '?url=' . urlencode($shareUrl);
 $response = requestUrl($endpoint, $requestTimeout);
 
 if ($response === false) {
@@ -272,3 +341,25 @@ if (!isValidJson($response)) {
 
 // 上游单平台接口返回有效 JSON，原样透传
 echo $response;
+
+// 转发成功：从上游响应里补充作品信息后记录
+$decoded = json_decode($response, true);
+if (is_array($decoded)) {
+    $ctx = $GLOBALS['sv_ctx'];
+    $data = is_array($decoded['data'] ?? null) ? $decoded['data'] : [];
+    $ctx['code'] = (int)($decoded['code'] ?? 0);
+    $ctx['msg'] = (string)($decoded['msg'] ?? '');
+    $ctx['title'] = (string)($data['title'] ?? '');
+    $ctx['author'] = is_array($data['author'] ?? null) ? (string)($data['author']['name'] ?? '') : '';
+    $ctx['video_id'] = (string)($data['video_id'] ?? '');
+    $ctx['aweme_id'] = (string)($data['aweme_id'] ?? '') !== ''
+        ? (string)$data['aweme_id']
+        : ($ctx['aweme_id'] !== '' ? $ctx['aweme_id'] : dy_extract_aweme_id((string)$ctx['target']));
+    $ctx['cache'] = 'sv';
+    $ctx['rt'] = round(microtime(true) - (float)($GLOBALS['sv_started'] ?? microtime(true)), 3);
+    if (function_exists('fastcgi_finish_request')) {
+        fastcgi_finish_request();
+    }
+    dy_log_request($ctx);
+    $GLOBALS['sv_ctx'] = [];
+}

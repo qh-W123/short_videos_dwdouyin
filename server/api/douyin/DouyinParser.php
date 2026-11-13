@@ -366,6 +366,15 @@ class DouyinParser
         $cover = $this->pickCover($detail);
         $result['cover'] = $cover ? ($this->toHttps($cover) ?: '') : '';
 
+        // 作品 ID：短链解析后才有，放进 extra 便于客户端与日志统计使用
+        $result['aweme_id'] = $this->strv($detail['aweme_id'] ?? '');
+        if (is_array($result['extra'] ?? null) || !isset($result['extra'])) {
+            $extra = (array)$result['extra'];
+            $extra['aweme_id'] = $result['aweme_id'];
+            $extra['sec_uid'] = $this->strv($detail['author']['sec_uid'] ?? '');
+            $result['extra'] = $extra;
+        }
+
         return $this->output(200, '解析成功', $result);
     }
 
