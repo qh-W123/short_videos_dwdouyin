@@ -921,27 +921,13 @@ class DouyinParser
         $redirected = false;
 
         for ($i = 0; $i < $max; $i++) {
-            $ch = curl_init($current);
-            curl_setopt_array($ch, [
-                CURLOPT_USERAGENT => self::DESKTOP_UA,
-                CURLOPT_RETURNTRANSFER => true,
-                CURLOPT_FOLLOWLOCATION => false,
-                CURLOPT_HEADER => true,
-                CURLOPT_TIMEOUT => 10,
-                CURLOPT_SSL_VERIFYPEER => false,
-                CURLOPT_SSL_VERIFYHOST => false,
-            ]);
-            $response = curl_exec($ch);
-            $error = curl_error($ch);
-            $headerSize = (int)curl_getinfo($ch, CURLINFO_HEADER_SIZE);
-            $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            curl_close($ch);
-
-            if ($error || $response === false || $httpCode < 300 || $httpCode >= 400) {
+            // 只取响应头：绝不下载正文。CDN 直链是 200 + 整段视频，
+            // 若用 RETURNTRANSFER 收正文会一直读到超时（曾因此每次多耗 10 秒）。
+            $headerText = $this->fetchHeadersOnly($current);
+            if ($headerText === null) {
                 break;
             }
 
-            $headerText = substr((string)$response, 0, $headerSize);
             if (!preg_match('/^location:\s*(\S+)/mi', $headerText, $matches)) {
                 break;
             }
@@ -958,9 +944,73 @@ class DouyinParser
 
             $current = $location;
             $redirected = true;
+
+            // 第一跳就已经落到 CDN 直链，后面不会再有重定向，立即停止
+            if ($this->isDirectCdnUrl($current)) {
+                break;
+            }
         }
 
         return $redirected ? $current : null;
+    }
+
+    /**
+     * 判断是否已是 CDN 直链（命中即无需再跟跳）
+     */
+    private function isDirectCdnUrl($url)
+    {
+        $host = strtolower((string)parse_url((string)$url, PHP_URL_HOST));
+        if ($host === '') {
+            return false;
+        }
+        foreach (['zjcdn.com', 'douyinvod.com', 'douyinpic.com', 'bytecdn.cn', 'bytedance.com', 'ibytedtos.com', 'snssdk.com'] as $needle) {
+            if (strpos($host, $needle) !== false) {
+                return strpos((string)$url, '/video/tos/') !== false || strpos($host, 'zjcdn') !== false;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * 只取响应头，丢弃正文。
+     * HEAD 若被拒则退化为 RANGE 0-0（服务端保证只回 1 字节）。
+     * 返回原始响应头文本；网络错误或无响应头返回 null。
+     */
+    private function fetchHeadersOnly($url)
+    {
+        $baseOpts = [
+            CURLOPT_USERAGENT => self::DESKTOP_UA,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_FOLLOWLOCATION => false,
+            CURLOPT_HEADER => true,
+            CURLOPT_NOBODY => true,
+            CURLOPT_TIMEOUT => 8,
+            CURLOPT_CONNECTTIMEOUT => 5,
+            CURLOPT_SSL_VERIFYPEER => false,
+            CURLOPT_SSL_VERIFYHOST => false,
+        ];
+
+        foreach ([true, false] as $useHead) {
+            $ch = curl_init($url);
+            $opts = $baseOpts;
+            if (!$useHead) {
+                // 部分 CDN 不认 HEAD：用 1 字节 Range 探测，避免读正文
+                $opts[CURLOPT_NOBODY] = false;
+                $opts[CURLOPT_RANGE] = '0-0';
+            }
+            curl_setopt_array($ch, $opts);
+            $response = curl_exec($ch);
+            $error = curl_error($ch);
+            $headerSize = (int)curl_getinfo($ch, CURLINFO_HEADER_SIZE);
+            $httpCode = (int)curl_getinfo($ch, CURLINFO_HTTP_CODE);
+            curl_close($ch);
+
+            if ($error === '' && $response !== false && $headerSize > 0 && $httpCode > 0) {
+                return substr((string)$response, 0, $headerSize);
+            }
+        }
+
+        return null;
     }
 
     /**
